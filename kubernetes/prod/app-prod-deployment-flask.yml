@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: flask-app
-        image: your_dockerhub_username/salamander-api:latest
+        image: <dockerhub-username>/salamander-api:latest
         ports:
         - containerPort: 5000
         env:

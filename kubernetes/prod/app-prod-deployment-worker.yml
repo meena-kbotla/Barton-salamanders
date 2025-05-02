@@ -13,12 +13,8 @@ spec:
         app: worker
     spec:
       containers:
-      - name: worker
-        image: your_dockerhub_username/salamander-api:latest
-        command: ["python", "worker.py"]
-        env:
-        - name: REDIS_HOST
-          value: "redis-db"
-        - name: REDIS_PORT
-          value: "6379"
+        - name: worker
+          image: <dockerhub-username>/salamander-api:latest
+          command: ["python"]
+          args: ["worker.py"]
 
