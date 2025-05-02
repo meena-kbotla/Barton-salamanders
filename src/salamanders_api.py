@@ -4,10 +4,11 @@ import requests
 import json
 import uuid
 import logging
+import jobs
 from flask import Flask
 from flask import jsonify
 from flask import request
-from jobs import add_job, get_job_by_id, jdb
+from jobs import add_job, get_job_by_id, jdb, q
 from collections import defaultdict
 
 
@@ -210,7 +211,7 @@ def jobs_route(job_id=None):
     '''
     Creates a job for salamander data analysis, lists all job IDs, or shows info for a specific job ID
     '''
-    job_rd = get_job_redis()
+    job_rd = get_redis_client()
 
     if job_id is None:
         if request.method == 'POST':
@@ -230,43 +231,33 @@ def jobs_route(job_id=None):
             return jsonify({"job_id": job_id}), 202
 
         elif request.method == 'GET':
-            keys = job_rd.keys("job:*")
-            job_list = []
-            for key in keys:
-                job_data = job_rd.get(key)
-                if job_data:
-                    job_list.append(json.loads(job_data))
-            return jsonify(job_list)
-
+            job_ids = jdb.keys("job:*")  # Get all keys that start with "job:"
+            job_ids = [job_id.decode("utf-8").split(":")[1] for job_id in job_ids]  # Strip the "job:" prefix
+            return jsonify({"job_ids": job_ids})
     else:
-        data = job_rd.get(f"job:{job_id}")
+        data = jobs.get_job_by_id(job_id)
         if data is None:
             return jsonify({"error": "Job ID not found"}), 404
-        return jsonify(json.loads(data))
+        return jsonify(data)
 
 @app.route('/results/<job_id>', methods=['GET'])
 def results_route(job_id=None):
     '''
     Returns the results for a completed salamander data job by job_id.
     '''
-    job_rd = get_job_redis()
-    result_rd = get_results_redis()
+    job_data = jobs.get_job_by_id(job_id)
+    if not job_data:
+        return jsonify({"error": "Job not found"}), 404
 
-    if not job_id:
-        return jsonify({"error": "Job ID must be provided"}), 400
+    status = job_data.get("status")
+    if status != "completed":
+        return jsonify({"message": f"Job status: {status}. Results not available yet."}), 202
 
-    # Check if result data exists for the job_id
-    result_data = result_rd.get(f"job:{job_id}")  # Ensure you prepend the 'job:' prefix if needed
-    if result_data:
-        return jsonify(json.loads(result_data))
+    result = jobs.get_job_result(job_id)
+    if result is None:
+        return jsonify({"error": "Result not found"}), 404
 
-    # If no result data, check the job status in the job Redis store
-    job_data = job_rd.get(f"job:{job_id}")  # Add 'job:' prefix to ensure you're checking the correct key
-    if job_data:
-        job_data = json.loads(job_data)
-        return jsonify({"status": f"Job is {job_data['status']}."})
-    else:
-        return jsonify({"error": "Invalid Job ID"}), 404
+    return jsonify(result), 200
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')

@@ -1,16 +1,23 @@
 import json
-import uuid
+from uuid import uuid4
 import redis
 import os
+import logging
 from datetime import datetime
 from hotqueue import HotQueue
 
-_redis_ip='redis-db'
-_redis_port='6379'
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-rd = redis.Redis(host=_redis_ip, port=6379, db=1)
-q = HotQueue("queue", host=_redis_ip, port=6379, db=2)
-jdb = redis.Redis(host=_redis_ip, port=6379, db=2)
+# Use env vars with fallback defaults
+REDIS_HOST = os.getenv("REDIS_HOST", "redis-db")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
+# Redis clients
+rd = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=1)  # result store
+jdb = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=2)  # job metadata
+q = HotQueue("job_queue", host=REDIS_HOST, port=REDIS_PORT, db=2)  # job queue
 
 def _generate_jid():
     """
@@ -19,7 +26,7 @@ def _generate_jid():
     Returns:
         str: a unique job identifier
     """
-    return str(uuid.uuid4())
+    return str(uuid4())
 
 def _instantiate_job(jid, status, start, end):
     """
@@ -48,7 +55,8 @@ def _save_job(jid, job_dict):
         jid (str): Job ID
         job_dict (dict): Job data to store
     """
-    jdb.set(jid, json.dumps(job_dict))
+    jdb.set(f"job:{jid}", json.dumps(job_dict))
+    logger.info(f"Saved job {jid} in Redis.")
     return
 
 def _queue_job(jid):
@@ -61,6 +69,7 @@ def _queue_job(jid):
     if jid is None:
         logger.error("Attempted to queue a job with None as the job ID.")
     q.put(jid)
+    logger.info(f"Job {jid} added to queue.")
     return
 
 def add_job(year, month):
@@ -75,7 +84,8 @@ def add_job(year, month):
     Returns:
         dict: The job dictionary
     """
-    job_id = _generate_jid()
+    print("INSIDE add_job()")
+    job_id = str(uuid4())
 
     job_data = {
         "id": job_id,
@@ -85,9 +95,11 @@ def add_job(year, month):
         "timestamp": datetime.utcnow().isoformat()
     }
 
-    jdb.set(f"job:{job_id}", json.dumps(job_data))
+    # Save the job metadata in Redis
+    _save_job(job_id, job_data)
 
     # Queue the job for processing
+    logger.info("Pushing job ID {job_id} to the queue.")
     _queue_job(job_id)
     
     return job_id
@@ -102,29 +114,44 @@ def get_job_by_id(jid):
     Returns:
         dict: Job data
     """
-    job = rd.hgetall(f"job:{jid}")
-    results = rs.get(f"result:{jid}")
-    if result:
-        job["summary"] = json.loads(result)
-    return job
+    job_data = jdb.get(f"job:{jid}")
+    if job_data:
+        job_data = json.loads(job_data)
+        results = rd.get(f"result:{jid}")
+        if results:
+            job_data["summary"] = json.loads(result)
+        return job_data
+    return None
 
-def update_job_status(jid, status):
+def update_job_status(job_id, status):
     """
     Update the status of job with job id `jid` to status `status`.
     
     Args:
-        jid (str): Job ID
+        job_id (str): Job ID
         status (str): New status value
 
     Raises: 
         Exception: if job is not found
     """
-    job_rd = redis.Redis(host='redis-db', port=6379, db=2)  # Use the correct Redis DB
-
-    job_data = job_rd.get(f"job:{job_id}")
+    job_data = jdb.get(f"job:{job_id}")
     if job_data:
         job_data = json.loads(job_data)
         job_data['status'] = status
-        job_rd.set(f"job:{job_id}", json.dumps(job_data))
+        jdb.set(f"job:{job_id}", json.dumps(job_data))
+        logger.info(f"Updated job {job_id} status to {status}.")
     else:
+        logger.error(f"Job ID {job_id} not found in the database.")
         raise ValueError (f"Job ID {job_id} not found")
+
+def list_jobs() -> list:
+    """
+    Lists all stored job IDS from Redis with a job.* key pattern.
+
+    There is no input arguments.
+
+    Returns:
+        keys (list): lists all stored job IDs
+    """
+    keys = jdb.keys("job.*")
+    return [key.split(".")[1] for key in keys]
