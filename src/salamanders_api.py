@@ -105,11 +105,9 @@ def get_all_salamanders():
     size_values = {  # initialize sets to store unique values
         'eliza_adult': set(),
         'eliza_juvenile': set(),
-        'eliza_sedcov': set(),
         'eliza_subadult': set(),
         'parthenia_adult': set(),
         'parthenia_juvenile': set(),
-        'parthenia_sedcov': set(),
         'parthenia_subadult': set()
     }
 
@@ -194,8 +192,8 @@ def get_size_distribution(year, month):
 
     # Size keys based on your data
     size_keys = [
-        'eliza_adult', 'eliza_juvenile', 'eliza_sedcov', 'eliza_subadult', 
-        'parthenia_adult', 'parthenia_juvenile', 'parthenia_sedcov', 'parthenia_subadult'
+        'eliza_adult', 'eliza_juvenile', 'eliza_subadult', 
+        'parthenia_adult', 'parthenia_juvenile', 'parthenia_subadult'
     ]
     
     for entry in filtered_data:
@@ -212,39 +210,36 @@ def jobs_route(job_id=None):
     '''
     Creates a job for salamander data analysis, lists all job IDs, or shows info for a specific job ID
     '''
-    rd = loading_redis()
     job_rd = get_job_redis()
 
     if job_id is None:
         if request.method == 'POST':
-            # Get JSON data from the request
             input_data = request.get_json()
-        
-            # Required parameters for creating a job
-            start = input_data.get('start')
-            end = input_data.get('end')
 
-            # Check if the required parameters are present
-            if not start or not end:
-                return jsonify({"error": "Missing required parameters: 'start' and 'end'"}), 400
+            year = input_data.get('year')
+            month = input_data.get('month')
 
-            # Add the job using the add_job function (which now handles start and end)
+            if not year or not month:
+                return jsonify({"error": "Missing required parameters: 'year' and 'month'"}), 400
+
             try:
-                job_id = add_job(start, end)
+                job_id = add_job(year, month)
             except ValueError as e:
                 return jsonify({"error": str(e)}), 400
 
             return jsonify({"job_id": job_id}), 202
 
         elif request.method == 'GET':
-            # Get all job IDs stored in Redis
-            keys = job_rd.keys()
-            keys = [key.decode('utf-8') for key in keys]
-            return jsonify(keys)
+            keys = job_rd.keys("job:*")
+            job_list = []
+            for key in keys:
+                job_data = job_rd.get(key)
+                if job_data:
+                    job_list.append(json.loads(job_data))
+            return jsonify(job_list)
 
     else:
-        # Handle GET request for a specific job
-        data = job_rd.get(job_id)
+        data = job_rd.get(f"job:{job_id}")
         if data is None:
             return jsonify({"error": "Job ID not found"}), 404
         return jsonify(json.loads(data))
@@ -260,11 +255,13 @@ def results_route(job_id=None):
     if not job_id:
         return jsonify({"error": "Job ID must be provided"}), 400
 
-    result_data = result_rd.get(job_id)
+    # Check if result data exists for the job_id
+    result_data = result_rd.get(f"job:{job_id}")  # Ensure you prepend the 'job:' prefix if needed
     if result_data:
         return jsonify(json.loads(result_data))
 
-    job_data = job_rd.get(job_id)
+    # If no result data, check the job status in the job Redis store
+    job_data = job_rd.get(f"job:{job_id}")  # Add 'job:' prefix to ensure you're checking the correct key
     if job_data:
         job_data = json.loads(job_data)
         return jsonify({"status": f"Job is {job_data['status']}."})
