@@ -239,7 +239,8 @@ def jobs_route(job_id=None):
         elif request.method == 'GET':
             # Get all job IDs stored in Redis
             keys = job_rd.keys()
-            return jsonify([key for key in keys])
+            keys = [key.decode('utf-8') for key in keys]
+            return jsonify(keys)
 
     else:
         # Handle GET request for a specific job
