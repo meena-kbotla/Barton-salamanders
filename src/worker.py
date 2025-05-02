@@ -1,51 +1,40 @@
-import redis
-import time
-import json
+import logging
+from jobs import update_job_status, process_job
 from hotqueue import HotQueue
-from jobs import update_job_status, get_job_by_id
+import os
 
+# Redis configuration
+redis_host = os.getenv("REDIS_HOST", "localhost")
+redis_port = int(os.getenv("REDIS_PORT", 6379))
+q = HotQueue("job_queue", host=redis_host, port=redis_port, db=1)
 
-# Redis clients
-rd = redis.Redis(host="redis-db", port=6379, db=0)
-q = HotQueue("queue", host="redis-db", port=6379, db=2)
+# Set up logging
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-def process_job(job):
+@q.worker
+def job_worker(job_id: str, *args):
     """
-    Simulates processing of a job.
+    Simulates a background worker that processes the job and
+    updates status from "in progress" to "completed"
 
-    Args:
-        job (dict): The job data
-
-    Returns:
-        dict: The result
+    Arguments:
+        job_id (str): specific job ID
     """
-    print(f"[WORKER] Processing job {job['id']}")
-    time.sleep(2) # simulate processing delay
-    result = {
-        "job_id": job["id"],
-        "result": f"Processed data from {job['start']} to {job['end']}"
-    }
-    return result
+    if not job_id:
+        logger.error(f"Received invalid job ID: {job_id}")
+        return  # Skip processing if job ID is invalid
+    
+    logger.info(f"Worker picked up job: {job_id}")
+    
+    try:
+        process_job(job_id)
+        update_job_status(job_id, "completed")
+    except Exception as e:
+        logger.error(f"Failed to process job {job_id}: {e}")
+        update_job_status(job_id, "failed")
+        return
 
-def save_result(job_id, result):
-    """
-    Save result into Redis.
+    logger.info(f"Job {job_id} completed successfully")
 
-    Args:
-        job_id (str): Job ID
-        result (dict): Result to save
-    """
-    key = f"result:{job_id}"
-    rd.set(key, json.dumps(result))
-
-print("Worker started. Waiting for jobs...")
-
-while True:
-    jid = q.get() # blocks until job is available
-    if jid:
-        job = get_job_by_id(jid)
-        if job:
-            update_job_status(jid, "in progress")
-            result = process_job(job)
-            save_result(jid, result)
-            update_job_status(jid, "complete")
