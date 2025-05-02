@@ -1,19 +1,14 @@
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: v1
+kind: Service
 metadata:
-  name: flask-ingress-prod
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+  name: flask-nodeport
+  namespace: salamander-ns
 spec:
-  rules:
-  - host: salamanders.prod.local
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: flask-app
-            port:
-              number: 5000
+  type: NodePort
+  selector:
+    app: flask-app
+  ports:
+    - port: 80
+      targetPort: 5000
+      nodePort: 30007
 

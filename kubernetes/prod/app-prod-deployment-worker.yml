@@ -14,11 +14,11 @@ spec:
     spec:
       containers:
       - name: worker
-        image: dtrevino0630/ml_app:1.0
+        image: your_dockerhub_username/salamander-api:latest
+        command: ["python", "worker.py"]
         env:
         - name: REDIS_HOST
-          value: redis-db
-        - name: LOG_LEVEL
-          value: WARNING
-        command: ["python", "/code/worker.py"]
+          value: "redis-db"
+        - name: REDIS_PORT
+          value: "6379"
 

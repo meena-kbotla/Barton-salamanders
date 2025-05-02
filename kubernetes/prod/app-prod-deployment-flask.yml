@@ -14,11 +14,12 @@ spec:
     spec:
       containers:
       - name: flask-app
-        image: dtrevino0630/ml_app:1.0
+        image: your_dockerhub_username/salamander-api:latest
         ports:
         - containerPort: 5000
         env:
         - name: REDIS_HOST
-          value: redis-db
-        command: ["python", "/code/salamanders_api.py"]
+          value: "redis-db"
+        - name: REDIS_PORT
+          value: "6379"
 
