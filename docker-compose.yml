@@ -20,7 +20,6 @@ services:
       - redis-db
     environment:
       - REDIS_HOST=redis-db
-    image: ${IMAGE_NAME}:${TAG}
     ports:
       - "5000:5000"
     networks:
@@ -36,7 +35,6 @@ services:
     environment:
       - REDIS_HOST=redis-db
       - LOG_LEVEL=WARNING
-    image: ${IMAGE_NAME}:${TAG}
     networks:
       - app-network
     command: ["python", "/code/worker.py"]
