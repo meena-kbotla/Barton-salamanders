@@ -56,6 +56,8 @@ def _queue_job(jid):
     Args:
         jid (str): Job ID
     """
+    if jid is None:
+        logger.error("Attempted to queue a job with None as the job ID.")
     q.put(jid)
     return
 
@@ -71,11 +73,22 @@ def add_job(start, end, status="submitted"):
     Returns:
         dict: The job dictionary
     """
-    jid = _generate_jid()
-    job_dict = _instantiate_job(jid, status, start, end)
-    _save_job(jid, job_dict)
-    _queue_job(jid)
-    return job_dict
+    job_id = _generate_jid()
+
+    # Check that start and end are provided and valid
+    if not start or not end:
+        raise ValueError("Both 'start' and 'end' are required for a job.")
+
+    # Create the job object (e.g., status: "submitted", you can change the status later)
+    job_dict = _instantiate_job(job_id, "submitted", start, end)
+
+    # Save the job object in Redis
+    _save_job(job_id, job_dict)
+    
+    # Queue the job for processing
+    _queue_job(job_id)
+    
+    return job_id
 
 def get_job_by_id(jid):
     """
@@ -88,6 +101,41 @@ def get_job_by_id(jid):
         dict: Job data
     """
     return json.loads(jdb.get(jid))
+
+def process_job(job_id: str):
+    """
+    Simulate the processing of a salamander job.
+
+    Args:
+        job_id (str): The job identifier to process.
+    """
+    print(f"Processing job {job_id}")
+
+    job_key = f"job.{job_id}"
+    job_data = db.hgetall(job_key)
+
+    if not job_data:
+        raise ValueError(f"Job ID {job_id} not found in Redis.")
+
+    try:
+        # Decode bytes to strings
+        start = job_data[b"start"].decode("utf-8")
+        end = job_data[b"end"].decode("utf-8")
+    except KeyError as e:
+        raise ValueError(f"Missing required job field: {e}")
+
+    # Simulate processing result (replace this with real logic)
+    result_data = {
+        "summary": f"Processed salamander data from {start} to {end}",
+        "count": 42,
+        "start": start,
+        "end": end
+    }
+
+    # Store result as JSON string in Redis under the same job hash
+    db.hset(job_key, mapping={"result": json.dumps(result_data)})
+
+    print(f"Finished processing job {job_id}")
 
 def update_job_status(jid, status):
     """
