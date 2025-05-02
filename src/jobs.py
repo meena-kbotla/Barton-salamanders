@@ -67,7 +67,7 @@ def _queue_job(jid):
         jid (str): Job ID
     """
     if jid is None:
-    logger.error("Attempted to queue a job with None as the job ID.")
+        logger.error("Attempted to queue a job with None as the job ID.")
     q.put(jid)
     logger.info(f"Job {jid} added to queue.")
     return
@@ -99,7 +99,7 @@ def add_job(year, month):
     _save_job(job_id, job_data)
 
     # Queue the job for processing
-    logger.info("Pushing job ID {job_id} to the queue.")
+    logger.info(f"Pushing job ID {job_id} to the queue.")
     _queue_job(job_id)
     
     return job_id
@@ -119,7 +119,7 @@ def get_job_by_id(jid):
         job_data = json.loads(job_data)
         results = rd.get(f"result:{jid}")
         if results:
-            job_data["summary"] = json.loads(result)
+            job_data["summary"] = json.loads(results)
         return job_data
     return None
 

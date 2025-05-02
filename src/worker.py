@@ -11,6 +11,7 @@ REDIS_HOST = os.getenv("REDIS_HOST", "redis-db")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
 # Redis clients
+d = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)  # result store
 rd = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=1)  # result store
 jdb = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=2)  # job metadata
 q = HotQueue("job_queue", host=REDIS_HOST, port=REDIS_PORT, db=2)  # job queue
@@ -20,36 +21,19 @@ log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-@q.worker
-def job_worker(job_id: str):
-    try:
-        logger.info(f"Received job: {job_id}")
-        data = rd.get(f"job:{job_id}")
-        if data is None:
-            logger.error(f"No job data found for job ID {job_id}")
-            return
-        job_data = json.loads(data)
-        process_job(job_id, job_data)
-    except Exception as e:
-        logger.exception(f"Unhandled exception in job_worker for job {job_id}: {e}")
-
-print("Worker is running and listening for jobs...")
-while True:
-    time.sleep(1)  # Prevent container from exiting
-
 def process_job(job_id, job_data):
     logger.info(f"Starting job {job_id}")
     year = job_data.get("year")
     month = job_data.get("month")
-    key = "raw-data"
+    key = "data"
 
     update_job_status(job_id, "in progress")
 
-    if not rd.exists(key):
-        error_msg = {"status": "failed", "reason": "No dataset found"}
-        rd.set(f"result:{job_id}", json.dumps(error_msg))
-        logger.error(f"Job {job_id} failed: {error_msg['reason']}")
-        return
+    #if not d.exists(key):
+    #    update_job_status(job_id, "failed")
+    #    rd.set(f"result:{job_id}", json.dumps(error_msg))
+    #    logger.error(f"Job {job_id} failed: {error_msg['reason']}")
+    #    return
 
     dataset = json.loads(rd.get(key))
     filtered = [entry for entry in dataset if entry["year_month"].startswith(f"{year}-{month}")]
@@ -60,7 +44,7 @@ def process_job(job_id, job_data):
     total_filalgae = 0
     total_sedcov = 0
 
-    for entry in filtered:
+    for entryi in filtered:
         for k in [
             "parthenia_juvenile", "parthenia_subadult", "parthenia_adult",
             "eliza_juvenile", "eliza_subadult", "eliza_adult"
@@ -115,3 +99,18 @@ def process_job(job_id, job_data):
     update_job_status(job_id, "completed")
     logger.info(f"Job {job_id} completed.")
 
+@q.worker
+def job_worker(job_id: str):
+    try:
+        logger.info(f"Received job: {job_id}")
+        data = jdb.get(f"job:{job_id}")
+        if data is None:
+            logger.error(f"No job data found for job ID {job_id}")
+            return
+        job_data = json.loads(data)
+        process_job(job_id, job_data)
+    except Exception as e:
+        logger.exception(f"Unhandled exception in job_worker for job {job_id}: {e}")
+
+if __name__ == '__main__':
+    job_worker()
