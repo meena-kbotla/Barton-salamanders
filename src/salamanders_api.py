@@ -27,14 +27,30 @@ def get_results_redis():
 
 def loading_redis():
     rd = redis.Redis(host=redis_host, port=6379, db=0)
-    
-    if rd.exists('data'):
-      return rd
-    else:
-        response = requests.get(url = 'https://storage.googleapis.com/public-download-files/hgnc/json/json/hgnc_complete_set.json')
-        data = json.loads(response.text)
-        rd.set('data', json.dumps(data))
+
+    if not rd.exists('data'):
+        url = "https://data.austintexas.gov/resource/brj7-e355.json"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            rd.set('data', json.dumps(data))
+        except Exception as e:
+            print(f"Error loading data from URL: {e}")
+            return None
+
     return rd
+
+@app.route('/help')
+def help():
+    return jsonify({
+        "/help": "GET - list all available endpoints",
+        "/data": "POST/GET/DELETE - handle salamander dataset (auto-downloads from city)",
+        "/genes": "GET - list all hgnc IDs (from HGNC dataset)",
+        "/genes/<hgnc_id>": "GET - get gene by ID",
+        "/jobs/<job_id>": "GET - job status",
+        "/results/<job_id>": "GET - retrieve image or job result"
+    })
 
 #/data: post, get, delete
 #post: posts data to redis container
@@ -54,18 +70,19 @@ def data_route():
         Dataset is returned
         Dataset is removed from the Redis container
     '''
+    rd = loading_redis()
+    if rd is None:
+        retunr jsonify({"error": "Failed to load data"}), 500
+
     if request.method == 'POST':
-        rd = loading_redis()
-        return f"Posted"
-    
+        return jsonify({"message": "Data is auto-loaded from URL and stored in Redis on first use."})
+
     elif request.method == 'GET':
-        rd = loading_redis()
         return json.loads(rd.get('data'))
 
     elif request.method == 'DELETE':
-        rd = loading_redis()
         rd.delete('data')
-        return f"Deleted"
+        return jsonify({"message": "Data deleted from Redis."})
 
 #/genes: get
 #/genes: prints all of the hgnc_ids from the dataset
@@ -97,7 +114,7 @@ def genes_route(hgnc_id=None):
         for i in range(0, len(data['response']['docs'])):
             ids.append(data['response']['docs'][i]['hgnc_id'])
         return jsonify(ids)
-   
+
 @app.route('/jobs', methods=['GET'])
 @app.route('/jobs', methods=['POST'])
 @app.route('/jobs/<job_id>', methods=['GET'])
@@ -107,7 +124,7 @@ def jobs_route(job_id=None):
     '''
     rd = loading_redis()
     job_rd = get_job_redis()
-    
+
     if job_id is None:
         if request.method == 'POST':
             inputt = request.get_json()
