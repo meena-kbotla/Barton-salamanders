@@ -5,7 +5,7 @@ WORKDIR /code
 COPY requirements.txt /code/requirements.txt
 RUN pip install -r /code/requirements.txt
 
-COPY src/gene_api.py /code/salamanders_api.py
+COPY src/salamanders_api.py /code/salamanders_api.py
 COPY src/worker.py /code/worker.py
 COPY src/jobs.py /code/jobs.py
 
