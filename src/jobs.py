@@ -13,6 +13,9 @@ jdb = redis.Redis(host=_redis_ip, port=6379, db=2)
 def _generate_jid():
     """
     Generate a pseudo-random identifier for a job.
+
+    Returns:
+        str: a unique job identifier
     """
     return str(uuid.uuid4())
 
@@ -20,6 +23,15 @@ def _instantiate_job(jid, status, start, end):
     """
     Create the job object description as a python dictionary. Requires the job id,
     status, start and end parameters.
+
+    Args:
+        jid (str): Job ID
+        status (str): Job Status ("submitted", "in progress", etc.)
+        start (str): Start of some processing range
+        end (str): End of some processing range
+
+    Returns:
+        dict: the job description
     """
     return {'id': jid,
             'status': status,
@@ -27,17 +39,38 @@ def _instantiate_job(jid, status, start, end):
             'end': end }
 
 def _save_job(jid, job_dict):
-    """Save a job object in the Redis database."""
+    """
+    Save a job object in the Redis database.
+
+    Args:
+        jid (str): Job ID
+        job_dict (dict): Job data to store
+    """
     jdb.set(jid, json.dumps(job_dict))
     return
 
 def _queue_job(jid):
-    """Add a job to the redis queue."""
+    """
+    Add a job to the redis queue.
+
+    Args:
+        jid (str): Job ID
+    """
     q.put(jid)
     return
 
 def add_job(start, end, status="submitted"):
-    """Add a job to the redis queue."""
+    """
+    Add a job to the redis queue.
+    
+    Args:
+        start (str): Start of range
+        end (str): End of range
+        status (str): Initial status (default "submitted")
+
+    Returns:
+        dict: The job dictionary
+    """
     jid = _generate_jid()
     job_dict = _instantiate_job(jid, status, start, end)
     _save_job(jid, job_dict)
@@ -45,14 +78,31 @@ def add_job(start, end, status="submitted"):
     return job_dict
 
 def get_job_by_id(jid):
-    """Return job dictionary given jid"""
+    """
+    Return job dictionary given jid
+    
+    Args:
+        jid (str): Job ID
+
+    Returns:
+        dict: Job data
+    """
     return json.loads(jdb.get(jid))
 
 def update_job_status(jid, status):
-    """Update the status of job with job id `jid` to status `status`."""
+    """
+    Update the status of job with job id `jid` to status `status`.
+    
+    Args:
+        jid (str): Job ID
+        status (str): New status value
+
+    Raises: 
+        Exception: if job is not found
+    """
     job_dict = get_job_by_id(jid)
     if job_dict:
         job_dict['status'] = status
         _save_job(jid, job_dict)
     else:
-        raise Exception()
+        raise Exception(f"JOB ID {jid} not found.")
