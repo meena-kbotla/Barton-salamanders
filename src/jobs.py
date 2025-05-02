@@ -1,6 +1,10 @@
 import json
 import uuid
 import redis
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+from datetime import datetime
 from hotqueue import HotQueue
 
 _redis_ip='redis-db'
@@ -102,41 +106,6 @@ def get_job_by_id(jid):
     """
     return json.loads(jdb.get(jid))
 
-def process_job(job_id: str):
-    """
-    Simulate the processing of a salamander job.
-
-    Args:
-        job_id (str): The job identifier to process.
-    """
-    print(f"Processing job {job_id}")
-
-    job_key = f"job.{job_id}"
-    job_data = db.hgetall(job_key)
-
-    if not job_data:
-        raise ValueError(f"Job ID {job_id} not found in Redis.")
-
-    try:
-        # Decode bytes to strings
-        start = job_data[b"start"].decode("utf-8")
-        end = job_data[b"end"].decode("utf-8")
-    except KeyError as e:
-        raise ValueError(f"Missing required job field: {e}")
-
-    # Simulate processing result (replace this with real logic)
-    result_data = {
-        "summary": f"Processed salamander data from {start} to {end}",
-        "count": 42,
-        "start": start,
-        "end": end
-    }
-
-    # Store result as JSON string in Redis under the same job hash
-    db.hset(job_key, mapping={"result": json.dumps(result_data)})
-
-    print(f"Finished processing job {job_id}")
-
 def update_job_status(jid, status):
     """
     Update the status of job with job id `jid` to status `status`.
@@ -154,3 +123,60 @@ def update_job_status(jid, status):
         _save_job(jid, job_dict)
     else:
         raise Exception(f"JOB ID {jid} not found.")
+
+def process_job(job_id: str):
+    """
+    Simulate the processing of a job, generate a plot, and store the image in Redis.
+
+    Args:
+        job_id (str): The job identifier to process.
+    """
+    try:
+        logger.info(f"Processing job {job_id}")
+        
+        # Retrieve job data from Redis
+        job_data = rd.hgetall(f"job.{job_id}")
+        if not job_data:
+            logger.error(f"Job data for {job_id} not found.")
+            return
+
+        start = job_data[b"start"].decode()
+        end = job_data[b"end"].decode()
+
+        # Log the received job data
+        logger.info(f"Job {job_id} has start: {start} and end: {end}")
+
+        # Load data from the dataset URL
+        url = "https://data.austintexas.gov/resource/brj7-e355.json"
+        df = pd.read_json(url)
+
+        # Ensure "year_month" is in datetime format
+        df['year_month'] = pd.to_datetime(df['year_month'], format='%Y-%m-%dT%H:%M:%S.%f')
+
+        # Filter data based on the start and end dates
+        filtered_df = df[(df['year_month'] >= start) & (df['year_month'] <= end)]
+
+        if filtered_df.empty:
+            logger.error(f"No data found for job {job_id} within date range {start} - {end}")
+            rd.hset(f"job.{job_id}", "status", "failed")
+            return
+
+        # Generate the plot (for example, a histogram of some relevant column, say 'value')
+        fig, ax = plt.subplots()
+        filtered_df["value"].hist(ax=ax)  # Replace "value" with the appropriate column name
+        ax.set_title(f"Data Distribution ({start} to {end})")
+        
+        # Save the plot as an image
+        image_path = f"/data/{job_id}.png"
+        fig.savefig(image_path)
+        logger.info(f"Plot saved as {image_path}")
+        
+        # Store the image path in Redis under the job ID
+        rd.hset(f"job.{job_id}", "result", image_path)
+        rd.hset(f"job.{job_id}", "status", "completed")
+        
+        logger.info(f"Job {job_id} completed successfully and result saved.")
+    
+    except Exception as e:
+        logger.error(f"Failed to process job {job_id}: {e}")
+        rd.hset(f"job.{job_id}", "status", "failed")
