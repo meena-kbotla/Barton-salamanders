@@ -1,6 +1,6 @@
 # Variables
-IMAGE_NAME = dtrevino0630/ml_app
-TAG = 1.0
+IMAGE_NAME = $(DOCKER_USER)/salamander-api
+TAG = latest
 CONTAINER_NAME = flask-app
 REDIS_SERVICE = redis-db
 FLASK_PORT = 5000
@@ -41,6 +41,11 @@ deploy-test:
 	kubectl apply -f kubernetes/test/app-test-service-flask.yml
 	kubectl apply -f kubernetes/test/app-test-service-redis.yml
 	kubectl apply -f kubernetes/test/app-test-service-nodeport-flask.yml
+
+# Unified Startup (docker-compose)
+.PHONY: up
+up:
+	IMAGE_NAME=$(IMAGE_NAME) TAG=$(TAG) docker-compose up --build
 
 # Run the Flask API locally (docker-compose)
 .PHONY: run-local
