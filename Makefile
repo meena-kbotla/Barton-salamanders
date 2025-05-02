@@ -29,8 +29,8 @@ run-worker:
 # Push image to Docker Hub (must docker login first)
 .PHONY: push
 push:
-	docker tag $(IMAGE_NAME):$(TAG) your_dockerhub_username/$(IMAGE_NAME):$(TAG)
-	docker push your_dockerhub_username/$(IMAGE_NAME):$(TAG)
+	docker tag $(IMAGE_NAME):$(TAG) <dockerhub-username>/$(IMAGE_NAME):$(TAG)
+	docker push <dockerhub-username>/$(IMAGE_NAME):$(TAG)
 
 # View logs
 .PHONY: logs
