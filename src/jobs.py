@@ -67,7 +67,7 @@ def _queue_job(jid):
         jid (str): Job ID
     """
     if jid is None:
-        logger.error("Attempted to queue a job with None as the job ID.")
+    logger.error("Attempted to queue a job with None as the job ID.")
     q.put(jid)
     logger.info(f"Job {jid} added to queue.")
     return
