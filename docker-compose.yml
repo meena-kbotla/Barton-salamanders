@@ -1,5 +1,4 @@
 
-version: "3"
 
 services:
   redis-db:
@@ -21,7 +20,7 @@ services:
       - redis-db
     environment:
       - REDIS_HOST=redis-db
-    image: username/ml_app:1.0
+    image: ${IMAGE_NAME}:${TAG}
     ports:
       - "5000:5000"
     networks:
@@ -37,7 +36,7 @@ services:
     environment:
       - REDIS_HOST=redis-db
       - LOG_LEVEL=WARNING
-    image: username/ml_app:1.0
+    image: ${IMAGE_NAME}:${TAG}
     networks:
       - app-network
     command: ["python", "/code/worker.py"]
