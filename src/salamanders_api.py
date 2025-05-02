@@ -8,6 +8,8 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from jobs import add_job, get_job_by_id, jdb
+from collections import defaultdict
+
 
 app = Flask(__name__)
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -41,15 +43,21 @@ def loading_redis():
 
     return rd
 
-@app.route('/help')
+#/help: get
+#/help: lists all available endpoints and their functions
+@app.route('/help', methods=['GET'])
 def help():
     return jsonify({
         "/help": "GET - list all available endpoints",
-        "/data": "POST/GET/DELETE - handle salamander dataset (auto-downloads from city)",
-        "/genes": "GET - list all hgnc IDs (from HGNC dataset)",
-        "/genes/<hgnc_id>": "GET - get gene by ID",
-        "/jobs/<job_id>": "GET - job status",
-        "/results/<job_id>": "GET - retrieve image or job result"
+        "/data": "POST/GET/DELETE - handle salamander dataset (auto-downloads from Austin city data)",
+        "/salamanders": "GET - list all recorded salamander sizes",
+        "/salamanders/years": "GET - list all years in the dataset",
+        "/salamanders/months/<year>": "GET - list months for a given year",
+        "/salamanders/conditions/<year>/<month>": "GET - list all data for a given year and month",
+        "/salamanders/sizes/<year>/<month>": "GET - size distribution for a given year and month",
+        "/jobs": "GET/POST - submit a job request or list job IDs",
+        "/jobs/<job_id>": "GET - job status and info",
+        "/results/<job_id>": "GET - retrieve result of completed job"
     })
 
 #/data: post, get, delete
@@ -84,82 +92,162 @@ def data_route():
         rd.delete('data')
         return jsonify({"message": "Data deleted from Redis."})
 
-#/genes: get
-#/genes: prints all of the hgnc_ids from the dataset
-#/genes/<hgnc_id>: prints all the data corresponding to a specific hgnc_id
-@app.route('/genes', methods=['GET'])
-@app.route('/genes/<hgnc_id>', methods=['GET'])
-def genes_route(hgnc_id=None):
+#/salamanders: get
+#/salamanders: returns all recorded sizes in the dataset
+@app.route('/salamanders', methods=['GET'])
+def get_all_salamanders():
     '''
-    This function outputs the data based on hgnc_id
-    Args:
-        hgnc_id(str): the hgnc_id corresponding to a chunk of data
-
-    Returns:
-        ids: all the hgnc ids from the dataset, returned when hgnc_id is not specified
-        data: all the data corresponding to a given hgnc_id, returned with the hgnc_id is specified
+    Returns all recorded sizes in the dataset
     '''
     rd = loading_redis()
     data = json.loads(rd.get('data'))
-    if hgnc_id is not None:
-        if isinstance(hgnc_id, str):
-            for i in range(0, len(data['response']['docs'])):
-                the_id = data['response']['docs'][i]['hgnc_id']
-                if hgnc_id == the_id:
-                    return data['response']['docs'][i]
-        else:
-            return f"The input is not a string!"
-    else:
-        ids = []
-        for i in range(0, len(data['response']['docs'])):
-            ids.append(data['response']['docs'][i]['hgnc_id'])
-        return jsonify(ids)
+
+    size_values = {  # initialize sets to store unique values
+        'eliza_adult': set(),
+        'eliza_juvenile': set(),
+        'eliza_sedcov': set(),
+        'eliza_subadult': set(),
+        'parthenia_adult': set(),
+        'parthenia_juvenile': set(),
+        'parthenia_sedcov': set(),
+        'parthenia_subadult': set()
+    }
+
+    for obs in data:
+        for key in size_values:
+            value = obs.get(key)
+            if value not in ['NA', None, '']:
+                try:
+                    size_values[key].add(float(value))  # use float for numeric sorting
+                except ValueError:
+                    continue  # skip bad data
+
+    # Convert sets to sorted lists
+    sorted_size_values = {key: sorted(list(values)) for key, values in size_values.items()}
+
+    return jsonify({
+        "unique_sizes_sorted_by_key": sorted_size_values,
+    })
+
+#/salamanders/years: get
+#/salamanders/years: returns a list of all unique years in the dataset
+@app.route('/salamanders/years', methods=['GET'])
+def get_all_years():
+    '''
+    Returns a list of unique years in the dataset
+    '''
+    rd = loading_redis()
+    data = json.loads(rd.get('data'))
+    years = sorted(set(entry['year_month'][:4] for entry in data if 'year_month' in entry))
+    return jsonify(years)
+
+#/salamanders/months/<year>: get
+#/salamanders/months/<year>: returns all months for a given year
+@app.route('/salamanders/months/<year>', methods=['GET'])
+def get_months_by_year(year):
+    '''
+    Returns a list of months present in a given year
+    Args:
+        year (str): Year to search
+    '''
+    rd = loading_redis()
+    data = json.loads(rd.get('data'))
+    months = sorted(set(entry['year_month'][5:7] for entry in data if entry['year_month'][:4] == year))
+    return jsonify(months)
+
+#/salamanders/conditions/<year>/<month>: get
+#/salamanders/conditions/<year>/<month>: returns salamander data for a specific year and month
+@app.route('/salamanders/conditions/<year>/<month>', methods=['GET'])
+def get_conditions_by_date(year, month):
+    '''
+    Returns all salamander data for a given year and month
+    Args:
+        year (str)
+        month (str)
+    '''
+    rd = loading_redis()
+    data = json.loads(rd.get('data'))
+    results = [entry for entry in data if entry['year_month'][:4] == year and entry['year_month'][5:7] == month]
+    return jsonify(results)
+
+#/salamanders/sizes/<year>/<month>: get
+#/salamanders/sizes/<year>/<month>: returns the salamander sizes for a year and month
+@app.route('/salamanders/sizes/<year>/<month>', methods=['GET'])
+def get_size_distribution(year, month):
+    '''
+    Returns a dictionary of salamander sizes and their counts for a specific year and month
+    Args:
+        year (str)
+        month (str)
+    '''
+    rd = loading_redis()
+    data = json.loads(rd.get('data'))
+
+    size_counts = defaultdict(int)  # Default dict to automatically handle missing keys
+
+    # Filter by year and month
+    filtered_data = [entry for entry in data if entry.get('year_month', '')[:4] == year and entry.get('year_month', '')[5:7] == month]
+    
+    # Check if any data exists for the filtered year and month
+    if not filtered_data:
+        return jsonify({"message": "No data found for the given year and month"}), 404
+
+    # Size keys based on your data
+    size_keys = [
+        'eliza_adult', 'eliza_juvenile', 'eliza_sedcov', 'eliza_subadult', 
+        'parthenia_adult', 'parthenia_juvenile', 'parthenia_sedcov', 'parthenia_subadult'
+    ]
+    
+    for entry in filtered_data:
+        for key in size_keys:
+            if entry.get(key) not in ['NA', None, '']:  # Use `get` to avoid key errors
+                size_counts[key] += float(entry[key])
+
+    return jsonify(size_counts)
 
 @app.route('/jobs', methods=['GET'])
 @app.route('/jobs', methods=['POST'])
 @app.route('/jobs/<job_id>', methods=['GET'])
 def jobs_route(job_id=None):
     '''
-    This function creates job ids, outputs all job ids, or outputs data related to a specific job id
+    Creates a job for salamander data analysis, lists all job IDs, or shows info for a specific job ID
     '''
     rd = loading_redis()
     job_rd = get_job_redis()
 
     if job_id is None:
         if request.method == 'POST':
-            inputt = request.get_json()
-            hgnc_start = inputt.get('hgnc_start')
-            hgnc_end = inputt.get('hgnc_end')
+            input_data = request.get_json()
+            month = input_data.get('month')
+            year = input_data.get('year')
+            metric = input_data.get('metric')  # e.g., 'size_summary', 'count_by_site'
 
-            if not hgnc_start or not hgnc_end:
-                return jsonify({"error": "Missing required parameters: 'hgnc_start' and 'hgnc_end'"})
-            start_num = int(hgnc_start)
-            end_num = int(hgnc_end)
-            job = add_job(start_num, end_num)
+            if not month or not year or not metric:
+                return jsonify({"error": "Missing required parameters: 'month', 'year', 'metric'"}), 400
 
-            return jsonify({"job_id": job["id"]})
+            job = add_job(month, year, metric)
+            return jsonify({"job_id": job["id"]}), 202
 
         elif request.method == 'GET':
-            keys = jdb.keys()
-            return jsonify([key.decode('utf-8') for key in keys])
+            keys = job_rd.keys()
+            return jsonify([key for key in keys])
 
     else:
         data = job_rd.get(job_id)
         if data is None:
-            return jsonify({"error": "Job ID not found"})
+            return jsonify({"error": "Job ID not found"}), 404
         return jsonify(json.loads(data))
 
 @app.route('/results/<job_id>', methods=['GET'])
 def results_route(job_id=None):
     '''
-    This function take sin a job id and outputs data for the genes with hgnc_ids within the provided range.
+    Returns the results for a completed salamander data job by job_id.
     '''
     job_rd = get_job_redis()
     result_rd = get_results_redis()
 
     if not job_id:
-        logger.warning(f"Job ID must be provided")
-        return jsonify({"error": "Job ID must be provided"})
+        return jsonify({"error": "Job ID must be provided"}), 400
 
     result_data = result_rd.get(job_id)
     if result_data:
@@ -168,13 +256,9 @@ def results_route(job_id=None):
     job_data = job_rd.get(job_id)
     if job_data:
         job_data = json.loads(job_data)
-        if job_data['status'] == 'complete':
-            return jsonify({"status": "Job is complete!"})
-        else:
-            return jsonify({"status": "Job is still processing!"})
+        return jsonify({"status": f"Job is {job_data['status']}."})
     else:
-        logger.warning(f"Job ID {job_id} not found")
-        return jsonify({"error": "Invalid Job ID"})
+        return jsonify({"error": "Invalid Job ID"}), 404
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
