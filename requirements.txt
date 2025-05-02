@@ -1,4 +1,6 @@
-Flask==3.0.2
-requests
+Flask
 redis
+pandas
+matplotlib
 hotqueue
+requests
