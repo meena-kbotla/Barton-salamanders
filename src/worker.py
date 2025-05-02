@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def job_worker(job_id: str):
     try:
         logger.info(f"Received job: {job_id}")
-        data = r.get(f"job:{job_id}")
+        data = rd.get(f"job:{job_id}")
         if data is None:
             logger.error(f"No job data found for job ID {job_id}")
             return
@@ -45,13 +45,13 @@ def process_job(job_id, job_data):
 
     update_job_status(job_id, "in progress")
 
-    if not r.exists(key):
+    if not rd.exists(key):
         error_msg = {"status": "failed", "reason": "No dataset found"}
-        r.set(f"result:{job_id}", json.dumps(error_msg))
+        rd.set(f"result:{job_id}", json.dumps(error_msg))
         logger.error(f"Job {job_id} failed: {error_msg['reason']}")
         return
 
-    dataset = json.loads(r.get(key))
+    dataset = json.loads(rd.get(key))
     filtered = [entry for entry in dataset if entry["year_month"].startswith(f"{year}-{month}")]
 
     total_count = 0
@@ -111,7 +111,7 @@ def process_job(job_id, job_data):
         }
     }
 
-    r.set(f"result:{job_id}", json.dumps(result))
+    rd.set(f"result:{job_id}", json.dumps(result))
     update_job_status(job_id, "completed")
     logger.info(f"Job {job_id} completed.")
 
