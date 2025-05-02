@@ -1,6 +1,4 @@
 Flask
 redis
-pandas
-matplotlib
 hotqueue
 requests
