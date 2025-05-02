@@ -72,7 +72,7 @@ def data_route():
     '''
     rd = loading_redis()
     if rd is None:
-        retunr jsonify({"error": "Failed to load data"}), 500
+        return jsonify({"error": "Failed to load data"}), 500
 
     if request.method == 'POST':
         return jsonify({"message": "Data is auto-loaded from URL and stored in Redis on first use."})
