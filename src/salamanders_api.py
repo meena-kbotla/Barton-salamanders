@@ -217,22 +217,32 @@ def jobs_route(job_id=None):
 
     if job_id is None:
         if request.method == 'POST':
+            # Get JSON data from the request
             input_data = request.get_json()
-            month = input_data.get('month')
-            year = input_data.get('year')
-            metric = input_data.get('metric')  # e.g., 'size_summary', 'count_by_site'
+        
+            # Required parameters for creating a job
+            start = input_data.get('start')
+            end = input_data.get('end')
 
-            if not month or not year or not metric:
-                return jsonify({"error": "Missing required parameters: 'month', 'year', 'metric'"}), 400
+            # Check if the required parameters are present
+            if not start or not end:
+                return jsonify({"error": "Missing required parameters: 'start' and 'end'"}), 400
 
-            job = add_job(month, year, metric)
-            return jsonify({"job_id": job["id"]}), 202
+            # Add the job using the add_job function (which now handles start and end)
+            try:
+                job_id = add_job(start, end)
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
+
+            return jsonify({"job_id": job_id}), 202
 
         elif request.method == 'GET':
+            # Get all job IDs stored in Redis
             keys = job_rd.keys()
             return jsonify([key for key in keys])
 
     else:
+        # Handle GET request for a specific job
         data = job_rd.get(job_id)
         if data is None:
             return jsonify({"error": "Job ID not found"}), 404
